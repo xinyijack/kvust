@@ -10,11 +10,14 @@ tracing = "0.1" # 日志处理
 dashmap = "4"
 thiserror = "1"
 http = "0.2"
+sled = "0.34" # sled db
+
 
 [dev-dependencies]
 anyhow = "1" # 错误处理
 async-prost = "0.3.0" # 支持把 protobuf 封装成 TCP frame
 futures = "0.3" # 提供 Stream trait
+tempfile = "3"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "io-util", "macros", "net" ] } # 异步网络库
 tracing-subscriber = "0.2" # 日志处理
 

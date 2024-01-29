@@ -1,5 +1,5 @@
 use dashmap::{DashMap, mapref::one::Ref};
-use crate::{KvError, Kvpair, Storage, Value};
+use crate::{KvError, Kvpair, Storage, StorageIter, Value};
 
 #[derive(Default, Clone, Debug)]
 pub struct MemTable {
@@ -53,6 +53,9 @@ impl Storage for MemTable {
     }
 
     fn get_iter(&self, _table: &str) -> Result<Box<dyn Iterator<Item = Kvpair>>, KvError> {
-        todo!()
+        // 使用 clone() 来获取 table 的 snapshot
+        let table = self.get_or_create_table(_table).clone();
+        let iter = StorageIter::new(table.into_iter());
+        Ok(Box::new(iter)) // <-- 编译出错
     }
 }
