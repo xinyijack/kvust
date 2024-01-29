@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_prost::AsyncProstStream;
 use futures::prelude::*;
-use kv1::{CommandRequest, CommandResponse, Service, ServiceInner, SledDb};
+use kv::{CommandRequest, CommandResponse, Service, ServiceInner, SledDb};
 use tokio::net::TcpListener;
 use tracing::info;
 
