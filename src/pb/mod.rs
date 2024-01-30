@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use http::StatusCode;
 use prost::Message;
-use crate::{CommandResponse, Hget, Hgetall, Hmget, KvError};
+use crate::{CommandResponse, Hdel, Hget, Hgetall, Hmget, KvError};
 use crate::pb::abi::{CommandRequest, Hset, Kvpair, Value, value};
 use crate::pb::abi::command_request::RequestData;
 
@@ -40,6 +40,15 @@ impl CommandRequest {
                 table: table.into(),
                 pair: Some(Kvpair::new(key, value)),
             }))
+        }
+    }
+
+    pub fn new_hdel(table: impl Into<String>, key: impl Into<String>) -> Self {
+        Self {
+            request_data: Some(RequestData::Hdel(Hdel {
+                table: table.into(),
+                key: key.into(),
+            })),
         }
     }
 }
@@ -152,6 +161,21 @@ impl From<f64> for Value {
         }
     }
 }
+
+impl<const N: usize> From<&[u8; N]> for Value {
+    fn from(buf: &[u8; N]) -> Self {
+        Bytes::copy_from_slice(&buf[..]).into()
+    }
+}
+
+impl From<Bytes> for Value {
+    fn from(buf: Bytes) -> Self {
+        Self {
+            value: Some(value::Value::Binary(buf)),
+        }
+    }
+}
+
 
 impl TryFrom<Value> for i64 {
     type Error = KvError;

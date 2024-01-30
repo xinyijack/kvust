@@ -129,7 +129,7 @@ pub fn dispatch(cmd: CommandRequest, store: &impl Storage) -> CommandResponse {
 
 #[cfg(test)]
 mod tests {
-    use std::arch::x86_64::_mm256_set_epi16;
+    // use std::arch::x86_64::_mm256_set_epi16;
     use std::thread;
     use http::StatusCode;
     use tracing::info;
