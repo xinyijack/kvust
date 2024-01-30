@@ -11,7 +11,8 @@ dashmap = "4"
 thiserror = "1"
 http = "0.2"
 sled = "0.34" # sled db
-
+flate2 = "1" # gzip 压缩
+tokio = { version = "1", features = ["full"] } # 异步网络库
 
 [dev-dependencies]
 anyhow = "1" # 错误处理
@@ -19,6 +20,7 @@ async-prost = "0.3.0" # 支持把 protobuf 封装成 TCP frame
 futures = "0.3" # 提供 Stream trait
 tempfile = "3"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "io-util", "macros", "net" ] } # 异步网络库
+tokio-util = { version = "0.6", features = ["codec"]}
 tracing-subscriber = "0.2" # 日志处理
 
 [build-dependencies]
