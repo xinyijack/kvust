@@ -4,6 +4,7 @@ use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use prost::Message;
+use tokio::io::{AsyncRead, AsyncReadExt};
 use tracing::debug;
 use crate::{CommandRequest, CommandResponse, KvError};
 
@@ -89,11 +90,30 @@ fn decode_header(header: usize) -> (usize, bool) {
     (len, compressed)
 }
 
+/// 从 stream 中读取一个完整的 frame
+pub async fn read_frame<S>(stream: &mut S, buf: &mut BytesMut) -> Result<(), KvError>
+    where
+        S: AsyncRead + Unpin + Send,
+{
+    let header = stream.read_u32().await? as usize;
+    let (len, _compressed) = decode_header(header);
+    // 如果没有这么大的内存，就分配至少一个 frame 的内存，保证它可用
+    buf.reserve(LEN_LEN + len);
+    buf.put_u32(header as _);
+    // advance_mut 是 unsafe 的原因是，从当前位置 pos 到 pos + len，
+    // 这段内存目前没有初始化。我们就是为了 reserve 这段内存，然后从 stream
+    // 里读取，读取完，它就是初始化的。所以，我们这么用是安全的
+    unsafe { buf.advance_mut(len) };
+    stream.read_exact(&mut buf[LEN_LEN..]).await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::Value;
     use bytes::Bytes;
+    use tokio::io::AsyncRead;
 
     #[test]
     fn command_request_encode_decode_should_work() {
@@ -145,5 +165,44 @@ mod tests {
         } else {
             false
         }
+    }
+
+
+    struct DummyStream {
+        buf: BytesMut,
+    }
+
+    impl AsyncRead for DummyStream {
+        fn poll_read(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+            buf: &mut tokio::io::ReadBuf<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            // 看看 ReadBuf 需要多大的数据
+            let len = buf.capacity();
+
+            // split 出这么大的数据
+            let data = self.get_mut().buf.split_to(len);
+
+            // 拷贝给 ReadBuf
+            buf.put_slice(&data);
+
+            // 直接完工
+            std::task::Poll::Ready(Ok(()))
+        }
+    }
+
+    #[tokio::test]
+    async fn read_frame_should_work() {
+        let mut buf = BytesMut::new();
+        let cmd = CommandRequest::new_hdel("t1", "k1");
+        cmd.encode_frame(&mut buf).unwrap();
+        let mut stream = DummyStream { buf };
+
+        let mut data = BytesMut::new();
+        read_frame(&mut stream, &mut data).await.unwrap();
+
+        let cmd1 = CommandRequest::decode_frame(&mut data).unwrap();
+        assert_eq!(cmd, cmd1);
     }
 }

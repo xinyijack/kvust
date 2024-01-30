@@ -1,6 +1,5 @@
 use anyhow::Result;
 use futures::prelude::*;
-use kv2::{CommandRequest, MemTable, Service, ServiceInner};
 use prost::Message;
 use tokio::net::TcpListener;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
