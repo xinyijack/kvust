@@ -1,7 +1,6 @@
 use tokio::fs;
 use anyhow::Result;
 use certify::{CA, CertType, generate_ca, generate_cert, load_ca};
-use tracing_subscriber::fmt::format;
 
 struct CertPem {
     cert_type: CertType,
@@ -14,7 +13,7 @@ async fn main() -> Result<()> {
     let pem = create_ca()?;
     gen_files(&pem).await?;
     let ca = load_ca(&pem.cert, &pem.key)?;
-    let pem = creat_cert(&ca, &["kvserver.acme.inc"], "Acme KV server", false)?;
+    let pem = create_cert(&ca, &["kvserver.acme.inc"], "Acme KV server", false)?;
     gen_files(&pem).await?;
     let pem = create_cert(&ca, &[], "awesome-device-id",true)?;
     gen_files(&pem).await?;

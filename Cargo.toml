@@ -13,6 +13,8 @@ http = "0.2"
 sled = "0.34" # sled db
 flate2 = "1" # gzip 压缩
 tokio = { version = "1", features = ["full"] } # 异步网络库
+tokio-rustls = "0.22"
+rustls-native-certs = "0.5"
 
 [dev-dependencies]
 anyhow = "1" # 错误处理
