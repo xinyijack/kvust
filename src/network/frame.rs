@@ -70,7 +70,7 @@ Self: Default + Sized + Message, {
         if compressed {
             let mut decoder = GzDecoder::new(&buf[..len]);
             let mut buf1 = Vec::with_capacity(2 * len);
-            decoder.read_to_end(&mut buf1);
+            decoder.read_to_end(&mut buf1)?;
             buf.advance(len);
 
             Ok(Self::decode(&buf1[..buf1.len()])?)

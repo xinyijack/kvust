@@ -1,4 +1,3 @@
-use std::env::Args;
 use std::sync::Arc;
 use tracing::debug;
 use crate::{CommandRequest, CommandResponse, KvError, Storage};
@@ -135,7 +134,6 @@ mod tests {
     use tracing::info;
     use super::*;
     use crate::{memory::MemTable, Value};
-    use crate::value::Value::Binary;
 
     #[test]
     fn service_should_works() {
