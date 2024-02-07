@@ -1,8 +1,8 @@
-mod pb;
-mod error;
-mod storage;
-mod service;
-mod network;
+pub mod pb;
+pub mod error;
+pub mod storage;
+pub mod service;
+pub mod network;
 
 pub use pb::abi::*;
 pub use error::KvError;

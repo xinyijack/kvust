@@ -26,8 +26,10 @@ async fn main() -> Result<()> {
                 AsyncProstStream::<_, CommandRequest, CommandResponse, _>::from(stream).for_async();
             while let Some(Ok(cmd)) = stream.next().await {
                 info!("Got a new command: {:?}", cmd);
-                let res = svc.execute(cmd);
-                stream.send(res).await.unwrap();
+                let mut res = svc.execute(cmd);
+                while let Some(data) = res.next().await {
+                    stream.send((*data).clone()).await.unwrap();
+                }
             }
             info!("Client {:?} disconnected", addr);
         });

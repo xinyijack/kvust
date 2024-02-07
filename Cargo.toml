@@ -15,6 +15,10 @@ flate2 = "1" # gzip 压缩
 tokio = { version = "1", features = ["full"] } # 异步网络库
 tokio-rustls = "0.22"
 rustls-native-certs = "0.5"
+tokio-util = { version = "0.6", features = ["compat"] } # tokio 和 futures 的兼容性库
+yamux = "0.9"
+tokio-stream = "0.1.14" # yamux 多路复用支持
+futures = "0.3"
 
 [dev-dependencies]
 anyhow = "1" # 错误处理

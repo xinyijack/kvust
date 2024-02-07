@@ -5,6 +5,8 @@ use crate::{KvError, Kvpair, Value};
 
 pub use sleddb::SledDb;
 
+pub use memory::*;
+
 /// 对存储的抽象，我们不关心数据存在哪儿，但需要定义外界如何和存储打交道
 pub trait Storage {
     /// 从一个 HashTable 里获取一个 key 的 value

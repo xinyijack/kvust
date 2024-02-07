@@ -1,8 +1,11 @@
 use std::sync::Arc;
+use futures::stream;
 use tracing::debug;
 use crate::{CommandRequest, CommandResponse, KvError, Storage};
 
 pub mod command_service;
+pub mod topic_service;
+mod topic;
 
 /// 对 Command 的处理的抽象
 pub trait CommandService {
@@ -41,12 +44,45 @@ impl<Arg> NotifyMut<Arg> for Vec<fn(&mut Arg)> {
 /// Service 数据结构
 pub struct Service<Store = MemTable> {
     inner: Arc<ServiceInner<Store>>,
+    broadcaster: Arc<Broadcaster>,
 }
 
 impl<Store> Clone for Service<Store> {
     fn clone(&self) -> Self {
         Self {
             inner: Arc::clone(&self.inner),
+            broadcaster: Arc::clone(&self.broadcaster),
+        }
+    }
+}
+
+impl<Store: Storage> From<ServiceInner<Store>> for Service<Store> {
+    fn from(inner: ServiceInner<Store>) -> Self {
+        Self{
+            inner: Arc::new(inner),
+            broadcaster: Default::default(),
+        }
+    }
+}
+
+impl<Store: Storage> Service<Store> {
+
+    pub fn execute(&self, cmd: CommandRequest) -> StreamingResponse {
+        debug!("Got request: {:?}", cmd);
+        self.inner.on_received.notify(&cmd);
+        let mut res = dispatch(cmd.clone(), &self.inner.store);
+
+        if res == CommandResponse::default() {
+            dispatch_stream(cmd, Arc::clone(&self.broadcaster))
+        } else {
+            debug!("Executed response: {:?}", res);
+            self.inner.on_executed.notify(&res);
+            self.inner.on_before_send.notify(&mut res);
+            if !self.inner.on_before_send.is_empty() {
+                debug!("Modified response: {:?}", res);
+            }
+
+            Box::pin(stream::once(async { Arc::new(res) }))
         }
     }
 }
@@ -92,29 +128,6 @@ impl<Store: Storage> ServiceInner<Store> {
     }
 }
 
-impl<Store: Storage> Service<Store> {
-
-    pub fn execute(&self, cmd: CommandRequest) -> CommandResponse {
-        debug!("Got request: {:?}", cmd);
-        // TODO: 发送 on_received 事件
-        self.inner.on_received.notify(&cmd);
-        let mut res = dispatch(cmd, &self.inner.store);
-        debug!("Executed response: {:?}", res);
-        // TODO: 发送 on_executed 事件
-        self.inner.on_executed.notify(&res);
-        self.inner.on_before_send.notify(&mut res);
-        res
-    }
-}
-
-impl<Store: Storage> From<ServiceInner<Store>> for Service<Store> {
-    fn from(value: ServiceInner<Store>) -> Self {
-        Self {
-            inner: Arc::new(value.into()),
-        }
-    }
-}
-
 // 从 Request 中得到 Response，目前处理 HGET/HGETALL/HSET
 pub fn dispatch(cmd: CommandRequest, store: &impl Storage) -> CommandResponse {
     match cmd.request_data {
@@ -126,17 +139,27 @@ pub fn dispatch(cmd: CommandRequest, store: &impl Storage) -> CommandResponse {
     }
 }
 
+/// 从 Request 中得到 Response，目前处理所有 PUBLISH/SUBSCRIBE/UNSUBSCRIBE
+pub fn dispatch_stream(cmd: CommandRequest, topic: impl Topic) -> StreamingResponse {
+    match cmd.request_data {
+        Some(RequestData::Publish(param)) => param.execute(topic),
+        Some(RequestData::Subscribe(param)) => param.execute(topic),
+        Some(RequestData::Unsubscribe(param)) => param.execute(topic),
+        // 如果走到这里，就是代码逻辑的问题，直接 crash 出来
+        _ => unreachable!(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    // use std::arch::x86_64::_mm256_set_epi16;
-    use std::thread;
     use http::StatusCode;
+    use tokio_stream::StreamExt;
     use tracing::info;
     use super::*;
     use crate::{memory::MemTable, Value};
 
-    #[test]
-    fn service_should_works() {
+    #[tokio::test]
+    async fn service_should_works() {
         // 我们需要一个 service 结构至少包含 Storage
         let service: Service = ServiceInner::new(MemTable::default()).into();
 
@@ -144,31 +167,31 @@ mod tests {
         let cloned = service.clone();
 
         // 创建一个线程，在 table t1 中写入 k1, v1
-        let handle = thread::spawn(move || {
-            let res = cloned.execute(CommandRequest::new_hset("t1", "k1", "v1".into()));
-            assert_res_ok(res, &[Value::default()], &[]);
-        });
-        handle.join().unwrap();
+        tokio::spawn(async move {
+            let mut res = cloned.execute(CommandRequest::new_hset("t1", "k1", "v1".into()));
+            let data = res.next().await.unwrap();
+            assert_res_ok(&data, &[Value::default()], &[]);
+        })
+            .await
+            .unwrap();
 
         // 在当前线程下读取 table t1 的 k1，应该返回 v1
-        let res = service.execute(CommandRequest::new_hget("t1", "k1"));
-        assert_res_ok(res, &["v1".into()], &[]);
+        let mut res = service.execute(CommandRequest::new_hget("t1", "k1"));
+        let data = res.next().await.unwrap();
+        assert_res_ok(&data, &["v1".into()], &[]);
     }
 
-    #[test]
-    fn event_registration_should_work() {
+    #[tokio::test]
+    async fn event_registration_should_work() {
         fn b(cmd: &CommandRequest) {
             info!("Got {:?}", cmd);
         }
-
         fn c(res: &CommandResponse) {
-            info!("{:?}", res)
+            info!("{:?}", res);
         }
-
         fn d(res: &mut CommandResponse) {
             res.status = StatusCode::CREATED.as_u16() as _;
         }
-
         fn e() {
             info!("Data is sent");
         }
@@ -181,13 +204,11 @@ mod tests {
             .fn_after_send(e)
             .into();
 
-        let res = service.execute(CommandRequest::new_hset("t1", "k1", "v1".into()));
-        assert_eq!(res.status, StatusCode::CREATED.as_u16() as u32);
-        assert_eq!(res.message, "");
-        assert_eq!(res.values, vec![Value::default()]);
-
-
-
+        let mut res = service.execute(CommandRequest::new_hset("t1", "k1", "v1".into()));
+        let data = res.next().await.unwrap();
+        assert_eq!(data.status, StatusCode::CREATED.as_u16() as u32);
+        assert_eq!(data.message, "");
+        assert_eq!(data.values, vec![Value::default()]);
     }
 }
 
@@ -195,20 +216,23 @@ mod tests {
 use crate::{Kvpair, Value};
 use crate::command_request::RequestData;
 use crate::memory::MemTable;
+use crate::service::topic::{Broadcaster, Topic};
+use crate::topic_service::{StreamingResponse, TopicService};
 
 // 测试成功返回的结果
 #[cfg(test)]
-pub fn assert_res_ok(mut res: CommandResponse, values: &[Value], pairs: &[Kvpair]) {
-    res.pairs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+pub fn assert_res_ok(res: &CommandResponse, values: &[Value], pairs: &[Kvpair]) {
+    let mut sorted_pairs = res.pairs.clone();
+    sorted_pairs.sort_by(|a, b| a.partial_cmp(b).unwrap());
     assert_eq!(res.status, 200);
     assert_eq!(res.message, "");
     assert_eq!(res.values, values);
-    assert_eq!(res.pairs, pairs);
+    assert_eq!(sorted_pairs, pairs);
 }
 
 // 测试失败返回的结果
 #[cfg(test)]
-pub fn assert_res_error(res: CommandResponse, code: u32, msg: &str) {
+pub fn assert_res_error(res: &CommandResponse, code: u32, msg: &str) {
     assert_eq!(res.status, code);
     assert!(res.message.contains(msg));
     assert_eq!(res.values, &[]);

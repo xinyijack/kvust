@@ -59,3 +59,9 @@ impl Storage for MemTable {
         Ok(Box::new(iter)) // <-- 编译出错
     }
 }
+
+impl From<(String, Value)> for Kvpair {
+    fn from(data: (String, Value)) -> Self {
+        Kvpair::new(data.0, data.1)
+    }
+}
