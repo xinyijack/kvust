@@ -1,5 +1,6 @@
 pub mod frame;
 pub mod tls;
+pub mod stream;
 
 use bytes::BytesMut;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
@@ -84,6 +85,64 @@ impl<S> ProstClientStream<S>
         let stream = &mut self.inner;
         read_frame(stream, &mut buf).await?;
         CommandResponse::decode_frame(&mut buf)
+    }
+}
+
+#[cfg(test)]
+pub mod utils {
+    use std::io::Error;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+    use bytes::{BufMut, BytesMut};
+    use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+
+    pub(crate) struct DummyStream {
+        pub(crate) buf: BytesMut,
+    }
+
+    impl AsyncRead for DummyStream {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            // 看看 ReadBuf 需要多大的数据
+            let len = buf.capacity();
+
+            // split 出这么大的数据
+            let data = self.get_mut().buf.split_to(len);
+
+            // 拷贝给 ReadBuf
+            buf.put_slice(&data);
+
+            // 直接完工
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    impl AsyncWrite for DummyStream {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<Result<usize, Error>> {
+            self.get_mut().buf.put_slice(buf);
+            Poll::Ready(Ok(buf.len()))
+        }
+
+        fn poll_flush(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Error>> {
+            Poll::Ready(Ok(()))
+        }
     }
 }
 

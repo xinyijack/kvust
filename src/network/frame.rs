@@ -113,7 +113,7 @@ mod tests {
     use super::*;
     use crate::Value;
     use bytes::Bytes;
-    use tokio::io::AsyncRead;
+    use crate::utils::DummyStream;
 
     #[test]
     fn command_request_encode_decode_should_work() {
@@ -164,31 +164,6 @@ mod tests {
             v >> 7 == 1
         } else {
             false
-        }
-    }
-
-
-    struct DummyStream {
-        buf: BytesMut,
-    }
-
-    impl AsyncRead for DummyStream {
-        fn poll_read(
-            self: std::pin::Pin<&mut Self>,
-            _cx: &mut std::task::Context<'_>,
-            buf: &mut tokio::io::ReadBuf<'_>,
-        ) -> std::task::Poll<std::io::Result<()>> {
-            // 看看 ReadBuf 需要多大的数据
-            let len = buf.capacity();
-
-            // split 出这么大的数据
-            let data = self.get_mut().buf.split_to(len);
-
-            // 拷贝给 ReadBuf
-            buf.put_slice(&data);
-
-            // 直接完工
-            std::task::Poll::Ready(Ok(()))
         }
     }
 
