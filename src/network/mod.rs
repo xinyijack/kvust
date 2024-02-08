@@ -86,6 +86,7 @@ impl<S> ProstClientStream<S>
 
 #[cfg(test)]
 pub mod utils {
+    use std::cmp::min;
     use std::io::Error;
     use std::pin::Pin;
     use std::task::{Context, Poll};
@@ -94,7 +95,7 @@ pub mod utils {
 
     #[derive(Default)]
     pub(crate) struct DummyStream {
-        pub(crate) buf: BytesMut,
+        pub buf: BytesMut,
     }
 
     impl AsyncRead for DummyStream {
@@ -103,16 +104,11 @@ pub mod utils {
             _cx: &mut Context<'_>,
             buf: &mut ReadBuf<'_>,
         ) -> Poll<std::io::Result<()>> {
-            // 看看 ReadBuf 需要多大的数据
-            let len = buf.capacity();
-
-            // split 出这么大的数据
-            let data = self.get_mut().buf.split_to(len);
-
-            // 拷贝给 ReadBuf
+            // DummyStream忘记修改了，搞了半天测试通过才发现
+            let this = self.get_mut();
+            let len = min(buf.capacity(), this.buf.len());
+            let data = this.buf.split_to(len);
             buf.put_slice(&data);
-
-            // 直接完工
             Poll::Ready(Ok(()))
         }
     }

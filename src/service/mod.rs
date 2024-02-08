@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use futures::stream;
 use tracing::debug;
-use crate::{CommandRequest, CommandResponse, KvError, Storage};
+use crate::{CommandRequest, CommandResponse, KvError, MemTable, Storage};
 
 pub mod command_service;
 pub mod topic_service;
@@ -56,9 +56,50 @@ impl<Store> Clone for Service<Store> {
     }
 }
 
+/// Service 内部数据结构
+pub struct ServiceInner<Store> {
+    store: Store,
+    on_received: Vec<fn(&CommandRequest)>,
+    on_executed: Vec<fn(&CommandResponse)>,
+    on_before_send: Vec<fn(&mut CommandResponse)>,
+    on_after_send: Vec<fn()>,
+}
+
+impl<Store: Storage> ServiceInner<Store> {
+    pub fn new(store: Store) -> Self {
+        Self {
+            store,
+            on_received: Vec::new(),
+            on_executed: Vec::new(),
+            on_before_send: Vec::new(),
+            on_after_send: Vec::new(),
+        }
+    }
+
+    pub fn fn_received(mut self, f: fn(&CommandRequest)) -> Self {
+        self.on_received.push(f);
+        self
+    }
+
+    pub fn fn_executed(mut self, f: fn(&CommandResponse)) -> Self {
+        self.on_executed.push(f);
+        self
+    }
+
+    pub fn fn_before_send(mut self, f: fn(&mut CommandResponse)) -> Self {
+        self.on_before_send.push(f);
+        self
+    }
+
+    pub fn fn_after_send(mut self, f: fn()) -> Self {
+        self.on_after_send.push(f);
+        self
+    }
+}
+
 impl<Store: Storage> From<ServiceInner<Store>> for Service<Store> {
     fn from(inner: ServiceInner<Store>) -> Self {
-        Self{
+        Self {
             inner: Arc::new(inner),
             broadcaster: Default::default(),
         }
@@ -66,7 +107,6 @@ impl<Store: Storage> From<ServiceInner<Store>> for Service<Store> {
 }
 
 impl<Store: Storage> Service<Store> {
-
     pub fn execute(&self, cmd: CommandRequest) -> StreamingResponse {
         debug!("Got request: {:?}", cmd);
         self.inner.on_received.notify(&cmd);
@@ -87,55 +127,21 @@ impl<Store: Storage> Service<Store> {
     }
 }
 
-/// Service 内部数据结构
-pub struct ServiceInner<Store> {
-    store: Store,
-    on_received: Vec<fn(&CommandRequest)>,
-    on_executed: Vec<fn(&CommandResponse)>,
-    on_before_send: Vec<fn(&mut CommandResponse)>,
-    on_after_send: Vec<fn()>,
-}
-
-impl<Store: Storage> ServiceInner<Store> {
-    pub fn new(store: Store) -> Self {
-        Self {
-            store: store,
-            on_received: vec![],
-            on_executed: vec![],
-            on_before_send: vec![],
-            on_after_send: vec![],
-        }
-    }
-
-    pub fn fn_received(mut self, f: fn(&CommandRequest)) -> Self {
-        self.on_received.push(f);
-        self
-    }
-
-    pub fn fn_execute(mut self, f: fn(&CommandResponse)) -> Self {
-        self.on_executed.push(f);
-        self
-    }
-
-    pub fn fn_before_send(mut self, f: fn(&mut CommandResponse)) -> Self {
-        self.on_before_send.push(f);
-        self
-    }
-
-    pub fn fn_after_send(mut self, f: fn()) -> Self {
-        self.on_after_send.push(f);
-        self
-    }
-}
-
-// 从 Request 中得到 Response，目前处理 HGET/HGETALL/HSET
+/// 从 Request 中得到 Response，目前处理所有 HGET/HSET/HDEL/HEXIST
 pub fn dispatch(cmd: CommandRequest, store: &impl Storage) -> CommandResponse {
     match cmd.request_data {
         Some(RequestData::Hget(param)) => param.execute(store),
         Some(RequestData::Hgetall(param)) => param.execute(store),
+        Some(RequestData::Hmget(param)) => param.execute(store),
         Some(RequestData::Hset(param)) => param.execute(store),
+        Some(RequestData::Hmset(param)) => param.execute(store),
+        Some(RequestData::Hdel(param)) => param.execute(store),
+        Some(RequestData::Hmdel(param)) => param.execute(store),
+        Some(RequestData::Hexist(param)) => param.execute(store),
+        Some(RequestData::Hmexist(param)) => param.execute(store),
         None => KvError::InvalidCommand("Request has no data".into()).into(),
-        _ => KvError::Internal("Not implemented".into()).into(),
+        // 处理不了的返回一个啥都不包括的 Response，这样后续可以用 dispatch_stream 处理
+        _ => CommandResponse::default(),
     }
 }
 
@@ -155,8 +161,9 @@ mod tests {
     use http::StatusCode;
     use tokio_stream::StreamExt;
     use tracing::info;
+
     use super::*;
-    use crate::{memory::MemTable, Value};
+    use crate::{MemTable, Value};
 
     #[tokio::test]
     async fn service_should_works() {
@@ -199,7 +206,7 @@ mod tests {
         let service: Service = ServiceInner::new(MemTable::default())
             .fn_received(|_: &CommandRequest| {})
             .fn_received(b)
-            .fn_execute(c)
+            .fn_executed(c)
             .fn_before_send(d)
             .fn_after_send(e)
             .into();
@@ -215,7 +222,6 @@ mod tests {
 #[cfg(test)]
 use crate::{Kvpair, Value};
 use crate::command_request::RequestData;
-use crate::memory::MemTable;
 use crate::service::topic::{Broadcaster, Topic};
 use crate::topic_service::{StreamingResponse, TopicService};
 

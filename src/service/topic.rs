@@ -1,11 +1,12 @@
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc};
 use dashmap::{DashMap, DashSet};
+use std::sync::{
+    atomic::{AtomicU32, Ordering},
+    Arc,
+};
 use tokio::sync::mpsc;
-use tokio::sync::mpsc::Receiver;
 use tracing::{debug, info, warn};
-use crate::{CommandResponse, KvError};
-use crate::Value;
+
+use crate::{CommandResponse, KvError, Value};
 
 /// topic 里最大存放的数据
 const BROADCAST_CAPACITY: usize = 128;
@@ -19,15 +20,15 @@ fn get_next_subscription_id() -> u32 {
 }
 
 pub trait Topic: Send + Sync + 'static {
-    // 订阅某个主题
-    fn subscribe(self, name: String) -> Receiver<Arc<CommandResponse>>;
-    // 取消对主题的订阅
+    /// 订阅某个主题
+    fn subscribe(self, name: String) -> mpsc::Receiver<Arc<CommandResponse>>;
+    /// 取消对主题的订阅
     fn unsubscribe(self, name: String, id: u32) -> Result<u32, KvError>;
-    // 往主题里发布一个数据
+    /// 往主题里发布一个数据
     fn publish(self, name: String, value: Arc<CommandResponse>);
 }
 
-/// 用于主题发布的订阅的数据结构
+/// 用于主题发布和订阅的数据结构
 #[derive(Default)]
 pub struct Broadcaster {
     /// 所有的主题列表
@@ -37,7 +38,7 @@ pub struct Broadcaster {
 }
 
 impl Topic for Arc<Broadcaster> {
-    fn subscribe(self, name: String) -> Receiver<Arc<CommandResponse>> {
+    fn subscribe(self, name: String) -> mpsc::Receiver<Arc<CommandResponse>> {
         let id = {
             let entry = self.topics.entry(name).or_default();
             let id = get_next_subscription_id();
@@ -45,7 +46,7 @@ impl Topic for Arc<Broadcaster> {
             id
         };
 
-        //生成一个 mpsc channel
+        // 生成一个 mpsc channel
         let (tx, rx) = mpsc::channel(BROADCAST_CAPACITY);
 
         let v: Value = (id as i64).into();
@@ -53,20 +54,21 @@ impl Topic for Arc<Broadcaster> {
         // 立刻发送 subscription id 到 rx
         let tx1 = tx.clone();
         tokio::spawn(async move {
-           if let Err(e) = tx1.send(Arc::new(v.into())).await {
-               // TODO: 这个很小概率发生，但目前我们没有善后
-               warn!("Failed to send subscription id: {}. Error: {:?}", id, e);
-           }
+            if let Err(e) = tx1.send(Arc::new(v.into())).await {
+                // TODO: 这个很小概率发生，但目前我们没有善后
+                warn!("Failed to send subscription id: {}. Error: {:?}", id, e);
+            }
         });
 
         // 把 tx 存入 subscription table
         self.subscriptions.insert(id, tx);
         debug!("Subscription {} is added", id);
-        // 返回rx给网络处理的上下文
+
+        // 返回 rx 给网络处理的上下文
         rx
     }
 
-    fn unsubscribe(self, name: String, id: u32) -> Result<u32, KvError>{
+    fn unsubscribe(self, name: String, id: u32) -> Result<u32, KvError> {
         match self.remove_subscription(name, id) {
             Some(id) => Ok(id),
             None => Err(KvError::NotFound(format!("subscription {}", id))),
@@ -75,25 +77,32 @@ impl Topic for Arc<Broadcaster> {
 
     fn publish(self, name: String, value: Arc<CommandResponse>) {
         tokio::spawn(async move {
-           match self.topics.get(&name) {
-               None => {}
-               Some(chan) => {
-                   // 复制整个 topic 下所有的 subscription id
-                   // 这里我们每个 id 是 u32，如果一个 topic 下有 10k 订阅，复制的成本
-                   // 也就是 40k 堆内存（外加一些控制结构），所以效率不算差
-                   // 这也是为什么我们用 NEXT_ID 来控制 subscription id 的生成
-                   let chan = chan.value().clone();
+            let mut ids = vec![];
+            if let Some(topic) = self.topics.get(&name) {
+                // 复制整个 topic 下所有的 subscription id
+                // 这里我们每个 id 是 u32，如果一个 topic 下有 10k 订阅，复制的成本
+                // 也就是 40k 堆内存（外加一些控制结构），所以效率不算差
+                // 这也是为什么我们用 NEXT_ID 来控制 subscription id 的生成
 
-                   // 循环发送
-                   for id in chan.into_iter() {
-                       if let Some(tx) = self.subscriptions.get(&id) {
-                           if let Err(e) = tx.send(value.clone()).await {
-                               warn!("Publish to {} failed! error: {:?}", id, e);
-                           }
-                       }
-                   }
-               }
-           }
+                let subscriptions = topic.value().clone();
+                // 尽快释放锁
+                drop(topic);
+
+                // 循环发送
+                for id in subscriptions.into_iter() {
+                    if let Some(tx) = self.subscriptions.get(&id) {
+                        if let Err(e) = tx.send(value.clone()).await {
+                            warn!("Publish to {} failed! error: {:?}", id, e);
+                            // client 中断连接
+                            ids.push(id);
+                        }
+                    }
+                }
+            }
+
+            for id in ids {
+                self.remove_subscription(name.clone(), id);
+            }
         });
     }
 }
@@ -145,7 +154,7 @@ mod tests {
         let id1 = get_id(&mut stream1).await;
         let id2 = get_id(&mut stream2).await;
 
-        assert_ne!(id1, id2);
+        assert!(id1 != id2);
 
         let res1 = stream1.recv().await.unwrap();
         let res2 = stream2.recv().await.unwrap();
