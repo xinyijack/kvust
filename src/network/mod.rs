@@ -94,7 +94,7 @@ pub mod utils {
     use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
     #[derive(Default)]
-    pub(crate) struct DummyStream {
+    pub struct DummyStream {
         pub buf: BytesMut,
     }
 

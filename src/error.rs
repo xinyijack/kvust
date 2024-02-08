@@ -27,6 +27,8 @@ pub enum KvError {
     TlsError(#[from] tokio_rustls::rustls::TLSError),
     #[error("Yamux Connection error")]
     YamuxConnectionError(#[from] yamux::ConnectionError),
+    #[error("Parse config error")]
+    ConfigError(#[from] toml::de::Error),
 
     #[error("Internal error: {0}")]
     Internal(String),
