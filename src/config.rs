@@ -77,13 +77,13 @@ mod tests {
 
     #[test]
     fn server_config_should_be_loaded() {
-        let result: Result<ServerConfig, toml::de::Error> = toml::from_str(include_str!("../fixtures/server.config"));
+        let result: Result<ServerConfig, toml::de::Error> = toml::from_str(include_str!("../fixtures/server.conf"));
         assert!(result.is_ok());
     }
 
     #[test]
     fn client_config_should_be_loaded() {
-        let result: Result<ServerConfig, toml::de::Error> = toml::from_str(include_str!("../fixtures/client.config"));
+        let result: Result<ServerConfig, toml::de::Error> = toml::from_str(include_str!("../fixtures/client.conf"));
         assert!(result.is_ok());
     }
 }

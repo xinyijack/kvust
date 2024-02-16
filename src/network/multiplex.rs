@@ -79,7 +79,7 @@ mod tests {
         assert_res_ok,
         network::tls::tls_utils::{tls_acceptor, tls_connector},
         utils::DummyStream,
-        CommandRequest, KvError, MemTable, ProstClientStream, ProstServerStream, Service,
+        CommandRequest, KvError, MemTable, ProstServerStream, Service,
         ServiceInner, Storage, TlsServerAcceptor,
     };
     use anyhow::Result;
@@ -162,15 +162,13 @@ mod tests {
         let mut ctrl = YamuxCtrl::new_client(stream, None);
 
         // 从 client ctrl 中打开一个新的 yamux stream
-        let stream = ctrl.open_stream().await?;
-        // 封装成 ProstClientStream
-        let mut client = ProstClientStream::new(stream);
+        let mut stream = ctrl.open_stream().await?;
 
         let cmd = CommandRequest::new_hset("t1", "k1", "v1".into());
-        client.execute_unary(&cmd).await.unwrap();
+        stream.execute_unary(&cmd).await.unwrap();
 
         let cmd = CommandRequest::new_hget("t1", "k1");
-        let res = client.execute_unary(&cmd).await.unwrap();
+        let res = stream.execute_unary(&cmd).await.unwrap();
         assert_res_ok(&res, &["v1".into()], &[]);
 
         Ok(())
