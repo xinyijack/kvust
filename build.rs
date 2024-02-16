@@ -4,10 +4,8 @@ fn main() {
     config.type_attribute(".", "#[derive(PartialOrd)]");
     config
         .out_dir("src/pb")
-        .compile_protos(&["src/abi.proto"], &["src/"])
+        .compile_protos(&["src/abi.proto"], &["."])
         .unwrap();
-    // Command::new("cargo")
-    //     .args(&["fmt", "--", "src/*.rs"])
-    //     .status()
-    //     .expect("cargo fmt failed");
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=abi.proto");
 }

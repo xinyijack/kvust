@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_util::compat::{Compat, FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
 use yamux::{Config, Connection, ConnectionError, Control, Mode, WindowUpdateMode};
+use crate::ProstClientStream;
 
 /// Yamux 控制结构
 pub struct YamuxCtrl<S> {
@@ -63,9 +64,9 @@ impl<S> YamuxCtrl<S>
     }
 
     /// 打开一个新的 stream
-    pub async fn open_stream(&mut self) -> Result<Compat<yamux::Stream>, ConnectionError> {
+    pub async fn open_stream(&mut self) -> Result<ProstClientStream<Compat<yamux::Stream>>, ConnectionError> {
         let stream = self.ctrl.open_stream().await?;
-        Ok(stream.compat())
+        Ok(ProstClientStream::new(stream.compat()))
     }
 }
 
