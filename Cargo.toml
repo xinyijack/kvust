@@ -31,9 +31,9 @@ tokio-stream = "0.1.14" # yamux 多路复用支持
 futures = "0.3"
 serde = { version = "1", features = ["derive"] } # 序列化和反序列化
 toml = "0.5" # toml支持
+anyhow = "1" # 错误处理
 
 [dev-dependencies]
-anyhow = "1" # 错误处理
 async-prost = "0.3.0" # 支持把 protobuf 封装成 TCP frame
 futures = "0.3" # 提供 Stream trait
 tempfile = "3"
