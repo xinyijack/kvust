@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use futures::stream;
-use tracing::debug;
+use tracing::{debug, instrument};
 use crate::{CommandRequest, CommandResponse, KvError, MemTable, Storage};
 
 pub mod command_service;
@@ -107,6 +107,7 @@ impl<Store: Storage> From<ServiceInner<Store>> for Service<Store> {
 }
 
 impl<Store: Storage> Service<Store> {
+    #[instrument(name = "service_execute", skip_all)]
     pub fn execute(&self, cmd: CommandRequest) -> StreamingResponse {
         debug!("Got request: {:?}", cmd);
         self.inner.on_received.notify(&cmd);

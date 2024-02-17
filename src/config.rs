@@ -83,7 +83,7 @@ mod tests {
 
     #[test]
     fn client_config_should_be_loaded() {
-        let result: Result<ServerConfig, toml::de::Error> = toml::from_str(include_str!("../fixtures/client.conf"));
+        let result: Result<ClientConfig, toml::de::Error> = toml::from_str(include_str!("../fixtures/client.conf"));
         assert!(result.is_ok());
     }
 }

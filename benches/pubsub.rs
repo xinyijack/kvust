@@ -7,7 +7,10 @@ use tokio::runtime::Builder;
 use tokio::time;
 use tokio_rustls::client::TlsStream;
 use tokio_stream::StreamExt;
-use tracing::info;
+use tracing::{info, span};
+use tracing_subscriber::EnvFilter;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 use kv::{ClientConfig, CommandRequest, ServerConfig, start_client_with_config, start_server_with_config, StorageConfig};
 use kv::multiplex::YamuxCtrl;
 
@@ -62,6 +65,19 @@ async fn start_publishers(topic: &'static str, values: &'static [&'static str]) 
 }
 
 fn pubsub(c: &mut Criterion) {
+    let tracer = opentelemetry_jaeger::new_pipeline()
+        .with_service_name("kv-bench")
+        .install_simple()
+        .unwrap();
+    let opentelemetry = tracing_opentelemetry::layer().with_tracer(tracer);
+
+    tracing_subscriber::registry()
+        .with(EnvFilter::from_default_env())
+        .with(opentelemetry)
+        .init();
+
+    let root = span!(tracing::Level::INFO, "app_start", work_units = 2);
+    let _enter = root.enter();
     // tracing_subcriber::fmt::init();
     // 创建 Tokio runtime
     let runtime = Builder::new_multi_thread()

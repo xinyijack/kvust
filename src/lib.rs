@@ -5,7 +5,6 @@ pub mod service;
 pub mod network;
 pub mod config;
 
-use std::time::Duration;
 pub use pb::abi::*;
 pub use error::KvError;
 pub use storage::*;
@@ -15,10 +14,9 @@ pub use config::*;
 
 use anyhow::Result;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::time;
 use tokio_rustls::client;
 use tokio_util::compat::FuturesAsyncReadCompatExt;
-use tracing::info;
+use tracing::{info, instrument, span};
 use crate::multiplex::YamuxCtrl;
 
 
@@ -26,6 +24,7 @@ pub fn add(left: usize, right: usize) -> usize {
     left + right
 }
 
+#[instrument(skip_all)]
 pub async fn start_server_with_config(config: &ServerConfig) -> Result<()> {
     let acceptor = TlsServerAcceptor::new(&config.tls.cert, &config.tls.key, config.tls.ca.as_deref())?;
 
@@ -38,6 +37,7 @@ pub async fn start_server_with_config(config: &ServerConfig) -> Result<()> {
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn start_client_with_config(config: &ClientConfig) -> Result<YamuxCtrl<client::TlsStream<TcpStream>>> {
     let addr = &config.general.addr;
     let tls = &config.tls;
@@ -56,6 +56,8 @@ async fn start_tls_server<Store: Storage>(addr: &str, store: Store, acceptor: Tl
     let listener = TcpListener::bind(addr).await?;
     info!("Start listening on {}", addr);
     loop {
+        let root = span!(tracing::Level::INFO, "server_process");
+        let _enter = root.enter();
         let tls = acceptor.clone();
         let (stream, addr) = listener.accept().await?;
         info!("Client {:?} connected", addr);
